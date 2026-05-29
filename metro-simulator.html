@@ -262,6 +262,7 @@
             <div class="station-list" id="lineList"></div>
             
             <h3>操作</h3>
+            <button class="btn btn-secondary" id="undoBtn" onclick="undo()" style="opacity: 0.5; cursor: not-allowed;">↩️ 撤销</button>
             <button class="btn btn-secondary" onclick="toggleBackground()">🌓 切换背景</button>
             <button class="btn btn-primary" onclick="showExportModal()">💾 导出</button>
             <button class="btn btn-warning" onclick="document.getElementById('importFile').click()">📂 导入</button>
@@ -344,8 +345,66 @@
             selectedLine: null,
             isWhiteBackground: false,
             currentLineId: null,
-            editingStation: null
+            editingStation: null,
+            history: [],
+            historyIndex: -1,
+            maxHistory: 50
         };
+
+        // Save state for undo
+        function saveState() {
+            // Remove any future states if we're not at the end
+            if (state.historyIndex < state.history.length - 1) {
+                state.history = state.history.slice(0, state.historyIndex + 1);
+            }
+            
+            // Save current state
+            const currentState = {
+                lines: JSON.parse(JSON.stringify(state.lines)),
+                stations: JSON.parse(JSON.stringify(state.stations))
+            };
+            
+            state.history.push(currentState);
+            
+            // Limit history size
+            if (state.history.length > state.maxHistory) {
+                state.history.shift();
+            } else {
+                state.historyIndex++;
+            }
+            
+            updateUndoButton();
+        }
+
+        // Undo function
+        function undo() {
+            if (state.historyIndex > 0) {
+                state.historyIndex--;
+                const prevState = state.history[state.historyIndex];
+                state.lines = JSON.parse(JSON.stringify(prevState.lines));
+                state.stations = JSON.parse(JSON.stringify(prevState.stations));
+                render();
+                updateLineList();
+                saveToLocalStorage();
+                updateStatusBar('已撤销');
+                updateUndoButton();
+            }
+        }
+
+        // Check if undo is available
+        function canUndo() {
+            return state.historyIndex > 0;
+        }
+
+        // Update undo button state
+        function updateUndoButton() {
+            const undoBtn = document.getElementById('undoBtn');
+            if (undoBtn) {
+                undoBtn.disabled = !canUndo();
+                undoBtn.style.opacity = canUndo() ? '1' : '0.5';
+                undoBtn.style.cursor = canUndo() ? 'pointer' : 'not-allowed';
+            }
+        }
 
         // Canvas setup
         const canvas = document.getElementById('mainCanvas');
@@ -383,7 +442,7 @@
         }
 
         // Mouse events
-        let lastPoint = null;
+        let lastPointObj = null;
 
         canvas.addEventListener('mousedown', handleMouseDown);
         canvas.addEventListener('mousemove', handleMouseMove);
@@ -402,20 +461,28 @@
             const pos = getMousePos(e);
             
             if (state.currentTool === 'draw') {
-                // Check if clicking on existing line
+                // Check if clicking on existing line (any point, not just the end)
                 const clickedLine = findLineNearPoint(pos, 10);
                 
                 if (clickedLine) {
-                    // Continue drawing from existing line
+                    // Continue drawing from existing line - find closest endpoint
                     state.selectedLine = clickedLine;
                     state.currentLineId = clickedLine.id;
                     state.isDrawing = true;
                     
-                    // Start from last point of the line
-                    if (clickedLine.points.length > 0) {
-                        lastPoint = clickedLine.points[clickedLine.points.length - 1];
+                    // Find the closest endpoint (first or last point)
+                    const firstPoint = clickedLine.points[0];
+                    const lastPoint = clickedLine.points[clickedLine.points.length - 1];
+                    
+                    const distToFirst = Math.sqrt(Math.pow(pos.x - firstPoint.x, 2) + Math.pow(pos.y - firstPoint.y, 2));
+                    const distToLast = Math.sqrt(Math.pow(pos.x - lastPoint.x, 2) + Math.pow(pos.y - lastPoint.y, 2));
+                    
+                    // Use the closest endpoint to start drawing
+                    if (distToFirst < distToLast) {
+                        // Start from first point - reverse the line so we draw from the beginning
+                        lastPointObj = firstPoint;
                     } else {
-                        lastPoint = pos;
+                        lastPointObj = lastPoint;
                     }
                     
                     document.getElementById('selectedLineName').textContent = clickedLine.name || '未命名线路';
@@ -435,7 +502,7 @@
                         points: [pos]
                     };
                     state.isDrawing = true;
-                    lastPoint = pos;
+                    lastPointObj = pos;
                 }
             } else if (state.currentTool === 'station') {
                 createStation(pos);
@@ -449,13 +516,26 @@
             
             if (state.currentTool === 'draw' && state.isDrawing) {
                 if (state.selectedLine) {
-                    // Extend existing line
-                    state.selectedLine.points.push(pos);
+                    // Extend existing line - add point to the correct end
+                    const firstPoint = state.selectedLine.points[0];
+                    const lastPoint = state.selectedLine.points[state.selectedLine.points.length - 1];
+                    
+                    // Check which endpoint we're drawing from
+                    const distToFirst = Math.sqrt(Math.pow(pos.x - firstPoint.x, 2) + Math.pow(pos.y - firstPoint.y, 2));
+                    const distToLast = Math.sqrt(Math.pow(pos.x - lastPoint.x, 2) + Math.pow(pos.y - lastPoint.y, 2));
+                    
+                    if (distToFirst < distToLast) {
+                        // Drawing from first point - add to beginning
+                        state.selectedLine.points.unshift(pos);
+                    } else {
+                        // Drawing from last point - add to end
+                        state.selectedLine.points.push(pos);
+                    }
                 } else if (state.currentLine) {
                     // Draw new line
                     state.currentLine.points.push(pos);
                 }
-                lastPoint = pos;
+                lastPointObj = pos;
                 render();
             } else if (state.currentTool === 'erase') {
                 // Highlight what will be erased
@@ -467,8 +547,10 @@
         function handleMouseUp() {
             if (state.currentTool === 'draw' && state.isDrawing) {
                 if (state.selectedLine) {
+                    saveState(); // Save before modifying line
                     state.selectedLine = null;
                 } else if (state.currentLine) {
+                    saveState(); // Save before adding new line
                     state.lines.push(state.currentLine);
                     state.currentLine = null;
                 }
@@ -540,6 +622,7 @@
                 lineId: nearestLine.id
             };
 
+            saveState(); // Save before adding station
             state.stations.push(station);
             render();
             saveToLocalStorage();
@@ -629,6 +712,9 @@
             const eraseRadius = 20;
             let erased = false;
 
+            // Save state before erasing
+            saveState();
+
             // Remove stations
             state.stations = state.stations.filter(station => {
                 const dist = Math.sqrt(Math.pow(station.x - pos.x, 2) + Math.pow(station.y - pos.y, 2));
@@ -714,39 +800,68 @@
         }
 
         function drawStation(station) {
-            const colors = {
-                normal: '#FFFFFF',
-                underground_transfer: '#FFD700',
-                outside_transfer: '#FFA500',
-                elevated: '#87CEEB',
-                ground: '#90EE90'
+            const styles = {
+                normal: { color: '#FFFFFF', stroke: '#333333', icon: '●', shape: 'circle' },
+                underground_transfer: { color: '#FFD700', stroke: '#B8860B', icon: '◆', shape: 'diamond' },
+                outside_transfer: { color: '#FF8C00', stroke: '#CC5500', icon: '■', shape: 'square' },
+                elevated: { color: '#4169E1', stroke: '#0000CD', icon: '▲', shape: 'triangle' },
+                ground: { color: '#228B22', stroke: '#006400', icon: '▼', shape: 'triangle-down' }
             };
 
-            const icons = {
-                normal: '●',
-                underground_transfer: '◆',
-                outside_transfer: '■',
-                elevated: '▲',
-                ground: '▼'
-            };
+            const style = styles[station.type] || styles.normal;
+            const size = 10;
 
-            ctx.beginPath();
-            ctx.arc(station.x, station.y, 12, 0, Math.PI * 2);
-            ctx.fillStyle = colors[station.type] || '#FFFFFF';
-            ctx.fill();
-            ctx.strokeStyle = '#000000';
+            ctx.fillStyle = style.color;
+            ctx.strokeStyle = style.stroke;
             ctx.lineWidth = 2;
+
+            // Draw different shapes based on station type
+            ctx.beginPath();
+            if (style.shape === 'circle') {
+                ctx.arc(station.x, station.y, size + 2, 0, Math.PI * 2);
+            } else if (style.shape === 'diamond') {
+                ctx.moveTo(station.x, station.y - size - 4);
+                ctx.lineTo(station.x + size + 4, station.y);
+                ctx.lineTo(station.x, station.y + size + 4);
+                ctx.lineTo(station.x - size - 4, station.y);
+                ctx.closePath();
+            } else if (style.shape === 'square') {
+                ctx.rect(station.x - size - 2, station.y - size - 2, (size + 2) * 2, (size + 2) * 2);
+            } else if (style.shape === 'triangle') {
+                ctx.moveTo(station.x, station.y - size - 5);
+                ctx.lineTo(station.x + size + 5, station.y + size + 3);
+                ctx.lineTo(station.x - size - 5, station.y + size + 3);
+                ctx.closePath();
+            } else if (style.shape === 'triangle-down') {
+                ctx.moveTo(station.x, station.y + size + 5);
+                ctx.lineTo(station.x + size + 5, station.y - size - 3);
+                ctx.lineTo(station.x - size - 5, station.y - size - 3);
+                ctx.closePath();
+            }
+            ctx.fill();
             ctx.stroke();
 
+            // Draw icon in center
             ctx.fillStyle = '#000000';
-            ctx.font = '14px Arial';
+            ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(icons[station.type] || '●', station.x, station.y);
+            ctx.fillText(style.icon, station.x, station.y);
 
+            // Draw station name with background for better visibility
+            const nameBgColor = state.isWhiteBackground ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)';
+            const nameTextColor = state.isWhiteBackground ? '#000000' : '#FFFFFF';
+            
+            ctx.font = '11px Microsoft YaHei';
+            const textWidth = ctx.measureText(station.name).width;
+            
+            // Draw background rectangle for name
+            ctx.fillStyle = nameBgColor;
+            ctx.fillRect(station.x - textWidth / 2 - 4, station.y - size - 18, textWidth + 8, 16);
+            
             // Draw station name
-            ctx.font = '12px Microsoft YaHei';
-            ctx.fillText(station.name, station.x, station.y - 20);
+            ctx.fillStyle = nameTextColor;
+            ctx.fillText(station.name, station.x, station.y - size - 10);
         }
 
         // Line list
@@ -805,6 +920,13 @@
                 state.stations = parsed.stations || [];
                 state.isWhiteBackground = parsed.isWhiteBackground || false;
                 
+                // Initialize history with loaded state
+                state.history = [{
+                    lines: JSON.parse(JSON.stringify(state.lines)),
+                    stations: JSON.parse(JSON.stringify(state.stations))
+                }];
+                state.historyIndex = 0;
+                
                 if (state.isWhiteBackground) {
                     container.style.background = '#ffffff';
                     document.body.style.color = '#000000';
@@ -814,6 +936,15 @@
                 
                 updateLineList();
                 render();
+                updateUndoButton();
+            } else {
+                // Initialize empty history for new projects
+                state.history = [{
+                    lines: [],
+                    stations: []
+                }];
+                state.historyIndex = 0;
+                updateUndoButton();
             }
         }
 
@@ -858,27 +989,36 @@
                 svg += `<path d="${path}" stroke="${line.color}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
             }
             
-            // Draw stations
-            const stationColors = {
-                normal: '#FFFFFF',
-                underground_transfer: '#FFD700',
-                outside_transfer: '#FFA500',
-                elevated: '#87CEEB',
-                ground: '#90EE90'
-            };
-
-            const stationIcons = {
-                normal: '●',
-                underground_transfer: '◆',
-                outside_transfer: '■',
-                elevated: '▲',
-                ground: '▼'
+            // Draw stations with different shapes
+            const stationStyles = {
+                normal: { color: '#FFFFFF', stroke: '#333333', icon: '●', shape: 'circle' },
+                underground_transfer: { color: '#FFD700', stroke: '#B8860B', icon: '◆', shape: 'diamond' },
+                outside_transfer: { color: '#FF8C00', stroke: '#CC5500', icon: '■', shape: 'square' },
+                elevated: { color: '#4169E1', stroke: '#0000CD', icon: '▲', shape: 'triangle' },
+                ground: { color: '#228B22', stroke: '#006400', icon: '▼', shape: 'triangle-down' }
             };
 
             for (const station of state.stations) {
-                svg += `<circle cx="${station.x}" cy="${station.y}" r="12" fill="${stationColors[station.type]}" stroke="#000000" stroke-width="2"/>`;
-                svg += `<text x="${station.x}" y="${station.y}" font-size="14" text-anchor="middle" dominant-baseline="middle" fill="#000000">${stationIcons[station.type]}</text>`;
-                svg += `<text x="${station.x}" y="${station.y - 20}" font-size="12" text-anchor="middle" fill="${text}">${station.name}</text>`;
+                const style = stationStyles[station.type] || stationStyles.normal;
+                const size = 10;
+                
+                if (style.shape === 'circle') {
+                    svg += `<circle cx="${station.x}" cy="${station.y}" r="${size + 2}" fill="${style.color}" stroke="${style.stroke}" stroke-width="2"/>`;
+                } else if (style.shape === 'diamond') {
+                    svg += `<polygon points="${station.x},${station.y - size - 4} ${station.x + size + 4},${station.y} ${station.x},${station.y + size + 4} ${station.x - size - 4},${station.y}" fill="${style.color}" stroke="${style.stroke}" stroke-width="2"/>`;
+                } else if (style.shape === 'square') {
+                    svg += `<rect x="${station.x - size - 2}" y="${station.y - size - 2}" width="${(size + 2) * 2}" height="${(size + 2) * 2}" fill="${style.color}" stroke="${style.stroke}" stroke-width="2"/>`;
+                } else if (style.shape === 'triangle') {
+                    svg += `<polygon points="${station.x},${station.y - size - 5} ${station.x + size + 5},${station.y + size + 3} ${station.x - size - 5},${station.y + size + 3}" fill="${style.color}" stroke="${style.stroke}" stroke-width="2"/>`;
+                } else if (style.shape === 'triangle-down') {
+                    svg += `<polygon points="${station.x},${station.y + size + 5} ${station.x + size + 5},${station.y - size - 3} ${station.x - size - 5},${station.y - size - 3}" fill="${style.color}" stroke="${style.stroke}" stroke-width="2"/>`;
+                }
+                
+                svg += `<text x="${station.x}" y="${station.y}" font-size="12" text-anchor="middle" dominant-baseline="middle" fill="#000000" font-weight="bold">${style.icon}</text>`;
+                
+                // Draw name background
+                svg += `<rect x="${station.x - 30}" y="${station.y - size - 18}" width="60" height="16" fill="${bg === '#ffffff' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)'}"/>`;
+                svg += `<text x="${station.x}" y="${station.y - size - 10}" font-size="11" text-anchor="middle" fill="${text}">${station.name}</text>`;
             }
             
             svg += '</svg>';
@@ -1061,6 +1201,7 @@
 
         function clearAll() {
             if (confirm('确定要清空所有内容吗？此操作不可恢复！')) {
+                saveState(); // Save before clearing all
                 state.lines = [];
                 state.stations = [];
                 state.currentLine = null;
@@ -1153,6 +1294,7 @@
 
         function saveStationEdit() {
             if (state.editingStation) {
+                saveState(); // Save before editing station
                 state.editingStation.name = document.getElementById('editStationName').value;
                 state.editingStation.type = document.getElementById('editStationType').value;
                 render();
@@ -1164,6 +1306,7 @@
 
         function deleteStation() {
             if (state.editingStation) {
+                saveState(); // Save before deleting station
                 state.stations = state.stations.filter(s => s.id !== state.editingStation.id);
                 render();
                 saveToLocalStorage();
