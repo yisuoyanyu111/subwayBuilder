@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地铁模拟建造</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .toolbar {
+            width: 280px;
+            background: #2a2a2a;
+            padding: 15px;
+            overflow-y: auto;
+            border-right: 1px solid #444;
+        }
+
+        .toolbar h2 {
+            margin-bottom: 15px;
+            font-size: 18px;
+            color: #4CAF50;
+        }
+
+        .toolbar h3 {
+            margin: 15px 0 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+        }
+
+        .btn-secondary {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #1976D2;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .btn-warning {
+            background: #ff9800;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #f57c00;
+        }
+
+        .btn.active {
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .color-picker {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+
+        .input-group {
+            margin: 10px 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #aaa;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background: #333;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background: #0a0a0a;
+        }
+
+        #mainCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .station-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .station-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: #333;
+            border-radius: 5px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            min-width: 400px;
+        }
+
+        .modal h3 {
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+
+        .modal-buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .export-options {
+            margin: 15px 0;
+        }
+
+        .export-option {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-bar {
+            position: absolute;
+            bottom: 10px;
+            left: 290px;
+            right: 10px;
+            background: rgba(42, 42, 42, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .line-info {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .hidden-file-input {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <h2>🚇 地铁模拟建造</h2>
+            
+            <h3>工具选择</h3>
+            <button class="btn btn-primary active" id="drawTool" onclick="setTool('draw')">✏️ 画线工具</button>
+            <button class="btn btn-secondary" id="stationTool" onclick="setTool('station')">🚉 创建站点</button>
+            <button class="btn btn-warning" id="eraseTool" onclick="setTool('erase')">🧹 橡皮擦</button>
+            
+            <h3>线路设置</h3>
+            <div class="input-group">
+                <label>线路颜色</label>
+                <input type="color" class="color-picker" id="lineColor" value="#FF0000">
+            </div>
+            <div class="input-group">
+                <label>线路名称</label>
+                <input type="text" id="lineName" placeholder="例如：1号线">
+            </div>
+            
+            <h3>站点设置</h3>
+            <div class="input-group">
+                <label>站点名称</label>
+                <input type="text" id="stationName" placeholder="例如：人民广场站">
+            </div>
+            <div class="input-group">
+                <label>站点类型</label>
+                <select id="stationType">
+                    <option value="normal">普通站</option>
+                    <option value="underground_transfer">地下换乘站</option>
+                    <option value="outside_transfer">站外换乘站</option>
+                    <option value="elevated">高架站</option>
+                    <option value="ground">地面站</option>
+                </select>
+            </div>
+            
+            <h3>线路列表</h3>
+            <div class="station-list" id="lineList"></div>
+            
+            <h3>操作</h3>
+            <button class="btn btn-secondary" onclick="toggleBackground()">🌓 切换背景</button>
+            <button class="btn btn-primary" onclick="showExportModal()">💾 导出</button>
+            <button class="btn btn-warning" onclick="document.getElementById('importFile').click()">📂 导入</button>
+            <input type="file" class="hidden-file-input" id="importFile" accept=".svg,.json" onchange="importData(event)">
+            <button class="btn btn-danger" onclick="clearAll()">🗑️ 清空全部</button>
+            
+            <div class="line-info" id="selectedLineInfo" style="display: none;">
+                <strong>当前选中线路:</strong>
+                <span id="selectedLineName"></span>
+            </div>
+        </div>
+        
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="mainCanvas"></canvas>
+            <div class="status-bar" id="statusBar">就绪 | 模式：画线</div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal" id="exportModal">
+        <div class="modal-content">
+            <h3>导出选项</h3>
+            <div class="export-options">
+                <div class="export-option">
+                    <label>背景颜色:</label>
+                    <select id="exportBgColor">
+                        <option value="dark">黑色背景</option>
+                        <option value="white">白色背景</option>
+                    </select>
+                </div>
+                <div class="export-option">
+                    <label>导出格式:</label>
+                    <select id="exportFormat">
+                        <option value="svg">SVG 矢量图</option>
+                        <option value="jpeg">JPEG 图片</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="exportData()">导出</button>
+                <button class="btn btn-secondary" onclick="closeModal('exportModal')">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Station Edit Modal -->
+    <div class="modal" id="stationModal">
+        <div class="modal-content">
+            <h3>编辑站点</h3>
+            <div class="input-group">
+                <label>站点名称</label>
+                <input type="text" id="editStationName">
+            </div>
+            <div class="input-group">
+                <label>站点类型</label>
+                <select id="editStationType">
+                    <option value="normal">普通站</option>
+                    <option value="underground_transfer">地下换乘站</option>
+                    <option value="outside_transfer">站外换乘站</option>
+                    <option value="elevated">高架站</option>
+                    <option value="ground">地面站</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="saveStationEdit()">保存</button>
+                <button class="btn btn-danger" onclick="deleteStation()">删除</button>
+                <button class="btn btn-secondary" onclick="closeModal('stationModal')">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        const state = {
+            lines: [],
+            stations: [],
+            currentTool: 'draw',
+            isDrawing: false,
+            currentLine: null,
+            selectedLine: null,
+            isWhiteBackground: false,
+            currentLineId: null,
+            editingStation: null
+        };
+
+        // Canvas setup
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            render();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Tool selection
+        function setTool(tool) {
+            state.currentTool = tool;
+            document.querySelectorAll('.toolbar .btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(tool + 'Tool').classList.add('active');
+            updateStatusBar(`模式：${getToolName(tool)}`);
+            
+            if (tool !== 'draw') {
+                state.selectedLine = null;
+                state.currentLineId = null;
+                document.getElementById('selectedLineInfo').style.display = 'none';
+            }
+        }
+
+        function getToolName(tool) {
+            const names = { draw: '画线', station: '创建站点', erase: '橡皮擦' };
+            return names[tool] || tool;
+        }
+
+        // Mouse events
+        let lastPoint = null;
+
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mouseleave', handleMouseUp);
+
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function handleMouseDown(e) {
+            const pos = getMousePos(e);
+            
+            if (state.currentTool === 'draw') {
+                // Check if clicking on existing line
+                const clickedLine = findLineNearPoint(pos, 10);
+                
+                if (clickedLine) {
+                    // Continue drawing from existing line
+                    state.selectedLine = clickedLine;
+                    state.currentLineId = clickedLine.id;
+                    state.isDrawing = true;
+                    
+                    // Start from last point of the line
+                    if (clickedLine.points.length > 0) {
+                        lastPoint = clickedLine.points[clickedLine.points.length - 1];
+                    } else {
+                        lastPoint = pos;
+                    }
+                    
+                    document.getElementById('selectedLineName').textContent = clickedLine.name || '未命名线路';
+                    document.getElementById('selectedLineInfo').style.display = 'block';
+                    document.getElementById('lineColor').value = clickedLine.color;
+                    document.getElementById('lineName').value = clickedLine.name || '';
+                } else {
+                    // Create new line
+                    const color = document.getElementById('lineColor').value;
+                    const name = document.getElementById('lineName').value || `线路${state.lines.length + 1}`;
+                    
+                    state.currentLineId = Date.now();
+                    state.currentLine = {
+                        id: state.currentLineId,
+                        name: name,
+                        color: color,
+                        points: [pos]
+                    };
+                    state.isDrawing = true;
+                    lastPoint = pos;
+                }
+            } else if (state.currentTool === 'station') {
+                createStation(pos);
+            } else if (state.currentTool === 'erase') {
+                eraseAtPosition(pos);
+            }
+        }
+
+        function handleMouseMove(e) {
+            const pos = getMousePos(e);
+            
+            if (state.currentTool === 'draw' && state.isDrawing) {
+                if (state.selectedLine) {
+                    // Extend existing line
+                    state.selectedLine.points.push(pos);
+                } else if (state.currentLine) {
+                    // Draw new line
+                    state.currentLine.points.push(pos);
+                }
+                lastPoint = pos;
+                render();
+            } else if (state.currentTool === 'erase') {
+                // Highlight what will be erased
+                render();
+                highlightEraseArea(pos);
+            }
+        }
+
+        function handleMouseUp() {
+            if (state.currentTool === 'draw' && state.isDrawing) {
+                if (state.selectedLine) {
+                    state.selectedLine = null;
+                } else if (state.currentLine) {
+                    state.lines.push(state.currentLine);
+                    state.currentLine = null;
+                }
+                state.isDrawing = false;
+                state.currentLineId = null;
+                updateLineList();
+                saveToLocalStorage();
+            }
+        }
+
+        // Station creation
+        function createStation(pos) {
+            // Check for overlapping stations
+            const minDistance = 30;
+            for (const station of state.stations) {
+                const dist = Math.sqrt(Math.pow(station.x - pos.x, 2) + Math.pow(station.y - pos.y, 2));
+                if (dist < minDistance) {
+                    alert('站点距离太近，请选择其他位置！');
+                    return;
+                }
+            }
+
+            // Find nearest line
+            let nearestLine = null;
+            let minDist = Infinity;
+            
+            for (const line of state.lines) {
+                for (const point of line.points) {
+                    const dist = Math.sqrt(Math.pow(point.x - pos.x, 2) + Math.pow(point.y - pos.y, 2));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearestLine = line;
+                    }
+                }
+            }
+
+            if (!nearestLine || minDist > 50) {
+                alert('站点必须靠近线路！');
+                return;
+            }
+
+            const name = document.getElementById('stationName').value || `站点${state.stations.length + 1}`;
+            const type = document.getElementById('stationType').value;
+
+            // Validate transfer station types
+            if (type === 'underground_transfer' || type === 'outside_transfer') {
+                const intersectingLines = findIntersectingLines(pos, 20);
+                if (intersectingLines.length < 2 && type === 'underground_transfer') {
+                    if (!confirm('该位置只有一条线路经过，确定要创建换乘站吗？')) {
+                        return;
+                    }
+                }
+            }
+
+            if (type === 'outside_transfer') {
+                const nearbyLines = findNearbyLines(pos, 100);
+                if (nearbyLines.length < 2) {
+                    alert('站外换乘站需要附近有多条线路！');
+                    return;
+                }
+            }
+
+            const station = {
+                id: Date.now(),
+                x: pos.x,
+                y: pos.y,
+                name: name,
+                type: type,
+                lineId: nearestLine.id
+            };
+
+            state.stations.push(station);
+            render();
+            saveToLocalStorage();
+            
+            // Clear station name input
+            document.getElementById('stationName').value = '';
+        }
+
+        function findIntersectingLines(pos, radius) {
+            const lines = [];
+            for (const line of state.lines) {
+                for (let i = 0; i < line.points.length - 1; i++) {
+                    const p1 = line.points[i];
+                    const p2 = line.points[i + 1];
+                    if (pointToSegmentDistance(pos, p1, p2) < radius) {
+                        if (!lines.includes(line)) {
+                            lines.push(line);
+                        }
+                    }
+                }
+            }
+            return lines;
+        }
+
+        function findNearbyLines(pos, radius) {
+            const lines = [];
+            for (const line of state.lines) {
+                for (const point of line.points) {
+                    const dist = Math.sqrt(Math.pow(point.x - pos.x, 2) + Math.pow(point.y - pos.y, 2));
+                    if (dist < radius) {
+                        if (!lines.includes(line)) {
+                            lines.push(line);
+                        }
+                        break;
+                    }
+                }
+            }
+            return lines;
+        }
+
+        function findLineNearPoint(pos, radius) {
+            for (const line of state.lines) {
+                for (const point of line.points) {
+                    const dist = Math.sqrt(Math.pow(point.x - pos.x, 2) + Math.pow(point.y - pos.y, 2));
+                    if (dist < radius) {
+                        return line;
+                    }
+                }
+            }
+            return null;
+        }
+
+        function pointToSegmentDistance(point, segmentStart, segmentEnd) {
+            const A = point.x - segmentStart.x;
+            const B = point.y - segmentStart.y;
+            const C = segmentEnd.x - segmentStart.x;
+            const D = segmentEnd.y - segmentStart.y;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            
+            if (lenSq !== 0) {
+                param = dot / lenSq;
+            }
+
+            let xx, yy;
+
+            if (param < 0) {
+                xx = segmentStart.x;
+                yy = segmentStart.y;
+            } else if (param > 1) {
+                xx = segmentEnd.x;
+                yy = segmentEnd.y;
+            } else {
+                xx = segmentStart.x + param * C;
+                yy = segmentStart.y + param * D;
+            }
+
+            const dx = point.x - xx;
+            const dy = point.y - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Erase functionality
+        function eraseAtPosition(pos) {
+            const eraseRadius = 20;
+            let erased = false;
+
+            // Remove stations
+            state.stations = state.stations.filter(station => {
+                const dist = Math.sqrt(Math.pow(station.x - pos.x, 2) + Math.pow(station.y - pos.y, 2));
+                if (dist < eraseRadius) {
+                    erased = true;
+                    return false;
+                }
+                return true;
+            });
+
+            // Remove line points
+            for (const line of state.lines) {
+                line.points = line.points.filter(point => {
+                    const dist = Math.sqrt(Math.pow(point.x - pos.x, 2) + Math.pow(point.y - pos.y, 2));
+                    if (dist < eraseRadius) {
+                        erased = true;
+                        return false;
+                    }
+                    return true;
+                });
+            }
+
+            // Remove empty lines
+            state.lines = state.lines.filter(line => line.points.length > 1);
+
+            if (erased) {
+                render();
+                updateLineList();
+                saveToLocalStorage();
+            }
+        }
+
+        function highlightEraseArea(pos) {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Render
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw lines
+            for (const line of state.lines) {
+                if (line.points.length < 2) continue;
+
+                ctx.beginPath();
+                ctx.moveTo(line.points[0].x, line.points[0].y);
+                
+                for (let i = 1; i < line.points.length; i++) {
+                    ctx.lineTo(line.points[i].x, line.points[i].y);
+                }
+
+                ctx.strokeStyle = line.color;
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+            }
+
+            // Draw current line being drawn
+            if (state.currentLine && state.currentLine.points.length > 0) {
+                ctx.beginPath();
+                ctx.moveTo(state.currentLine.points[0].x, state.currentLine.points[0].y);
+                
+                for (let i = 1; i < state.currentLine.points.length; i++) {
+                    ctx.lineTo(state.currentLine.points[i].x, state.currentLine.points[i].y);
+                }
+
+                ctx.strokeStyle = state.currentLine.color;
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+            }
+
+            // Draw stations
+            for (const station of state.stations) {
+                drawStation(station);
+            }
+        }
+
+        function drawStation(station) {
+            const colors = {
+                normal: '#FFFFFF',
+                underground_transfer: '#FFD700',
+                outside_transfer: '#FFA500',
+                elevated: '#87CEEB',
+                ground: '#90EE90'
+            };
+
+            const icons = {
+                normal: '●',
+                underground_transfer: '◆',
+                outside_transfer: '■',
+                elevated: '▲',
+                ground: '▼'
+            };
+
+            ctx.beginPath();
+            ctx.arc(station.x, station.y, 12, 0, Math.PI * 2);
+            ctx.fillStyle = colors[station.type] || '#FFFFFF';
+            ctx.fill();
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = '#000000';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(icons[station.type] || '●', station.x, station.y);
+
+            // Draw station name
+            ctx.font = '12px Microsoft YaHei';
+            ctx.fillText(station.name, station.x, station.y - 20);
+        }
+
+        // Line list
+        function updateLineList() {
+            const lineList = document.getElementById('lineList');
+            lineList.innerHTML = '';
+
+            for (const line of state.lines) {
+                const item = document.createElement('div');
+                item.className = 'station-item';
+                item.innerHTML = `
+                    <span style="color: ${line.color}">● ${line.name}</span>
+                    <span>${line.points.length}个点</span>
+                `;
+                item.onclick = () => selectLine(line);
+                lineList.appendChild(item);
+            }
+        }
+
+        function selectLine(line) {
+            state.selectedLine = line;
+            state.currentLineId = line.id;
+            document.getElementById('lineColor').value = line.color;
+            document.getElementById('lineName').value = line.name;
+            document.getElementById('selectedLineName').textContent = line.name;
+            document.getElementById('selectedLineInfo').style.display = 'block';
+            setTool('draw');
+        }
+
+        // Background toggle
+        function toggleBackground() {
+            state.isWhiteBackground = !state.isWhiteBackground;
+            container.style.background = state.isWhiteBackground ? '#ffffff' : '#0a0a0a';
+            document.body.style.color = state.isWhiteBackground ? '#000000' : '#ffffff';
+            document.querySelector('.toolbar').style.background = state.isWhiteBackground ? '#f0f0f0' : '#2a2a2a';
+            document.querySelector('.toolbar').style.color = state.isWhiteBackground ? '#000000' : '#ffffff';
+            render();
+        }
+
+        // Local storage
+        function saveToLocalStorage() {
+            const data = {
+                lines: state.lines,
+                stations: state.stations,
+                isWhiteBackground: state.isWhiteBackground
+            };
+            localStorage.setItem('metroData', JSON.stringify(data));
+            updateStatusBar('已自动保存');
+        }
+
+        function loadFromLocalStorage() {
+            const data = localStorage.getItem('metroData');
+            if (data) {
+                const parsed = JSON.parse(data);
+                state.lines = parsed.lines || [];
+                state.stations = parsed.stations || [];
+                state.isWhiteBackground = parsed.isWhiteBackground || false;
+                
+                if (state.isWhiteBackground) {
+                    container.style.background = '#ffffff';
+                    document.body.style.color = '#000000';
+                    document.querySelector('.toolbar').style.background = '#f0f0f0';
+                    document.querySelector('.toolbar').style.color = '#000000';
+                }
+                
+                updateLineList();
+                render();
+            }
+        }
+
+        // Export/Import
+        function showExportModal() {
+            document.getElementById('exportModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function exportData() {
+            const bgColor = document.getElementById('exportBgColor').value;
+            const format = document.getElementById('exportFormat').value;
+
+            if (format === 'svg') {
+                exportAsSVG(bgColor);
+            } else {
+                exportAsJPEG(bgColor);
+            }
+
+            closeModal('exportModal');
+        }
+
+        function exportAsSVG(bgColor) {
+            const bg = bgColor === 'white' ? '#ffffff' : '#0a0a0a';
+            const text = bgColor === 'white' ? '#000000' : '#ffffff';
+            
+            let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}">`;
+            svg += `<rect width="100%" height="100%" fill="${bg}"/>`;
+            
+            // Draw lines
+            for (const line of state.lines) {
+                if (line.points.length < 2) continue;
+                
+                let path = `M ${line.points[0].x} ${line.points[0].y}`;
+                for (let i = 1; i < line.points.length; i++) {
+                    path += ` L ${line.points[i].x} ${line.points[i].y}`;
+                }
+                
+                svg += `<path d="${path}" stroke="${line.color}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+            }
+            
+            // Draw stations
+            const stationColors = {
+                normal: '#FFFFFF',
+                underground_transfer: '#FFD700',
+                outside_transfer: '#FFA500',
+                elevated: '#87CEEB',
+                ground: '#90EE90'
+            };
+
+            const stationIcons = {
+                normal: '●',
+                underground_transfer: '◆',
+                outside_transfer: '■',
+                elevated: '▲',
+                ground: '▼'
+            };
+
+            for (const station of state.stations) {
+                svg += `<circle cx="${station.x}" cy="${station.y}" r="12" fill="${stationColors[station.type]}" stroke="#000000" stroke-width="2"/>`;
+                svg += `<text x="${station.x}" y="${station.y}" font-size="14" text-anchor="middle" dominant-baseline="middle" fill="#000000">${stationIcons[station.type]}</text>`;
+                svg += `<text x="${station.x}" y="${station.y - 20}" font-size="12" text-anchor="middle" fill="${text}">${station.name}</text>`;
+            }
+            
+            svg += '</svg>';
+            
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `metro_${Date.now()}.svg`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            updateStatusBar('SVG 导出成功');
+        }
+
+        function exportAsJPEG(bgColor) {
+            // Create temporary canvas with desired background
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Fill background
+            tempCtx.fillStyle = bgColor === 'white' ? '#ffffff' : '#0a0a0a';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // Draw current canvas content
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // Export as JPEG
+            const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `metro_${Date.now()}.jpg`;
+            a.click();
+            
+            updateStatusBar('JPEG 导出成功');
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            
+            if (file.name.endsWith('.json')) {
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        state.lines = data.lines || [];
+                        state.stations = data.stations || [];
+                        state.isWhiteBackground = data.isWhiteBackground || false;
+                        
+                        if (state.isWhiteBackground) {
+                            container.style.background = '#ffffff';
+                            document.body.style.color = '#000000';
+                            document.querySelector('.toolbar').style.background = '#f0f0f0';
+                            document.querySelector('.toolbar').style.color = '#000000';
+                        }
+                        
+                        updateLineList();
+                        render();
+                        saveToLocalStorage();
+                        updateStatusBar('JSON 导入成功');
+                    } catch (err) {
+                        alert('导入失败：' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            } else if (file.name.endsWith('.svg')) {
+                reader.onload = function(e) {
+                    try {
+                        parseSVG(e.target.result);
+                        updateStatusBar('SVG 导入成功');
+                    } catch (err) {
+                        alert('SVG 解析失败：' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+            
+            event.target.value = '';
+        }
+
+        function parseSVG(svgContent) {
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+            
+            // Parse paths (lines)
+            const paths = svgDoc.querySelectorAll('path');
+            const stationCircles = svgDoc.querySelectorAll('circle');
+            const stationTexts = svgDoc.querySelectorAll('text');
+            
+            state.lines = [];
+            state.stations = [];
+            
+            const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
+            let colorIndex = 0;
+            
+            paths.forEach((path, index) => {
+                const d = path.getAttribute('d');
+                const stroke = path.getAttribute('stroke') || colors[colorIndex % colors.length];
+                colorIndex++;
+                
+                const points = parsePathData(d);
+                if (points.length > 1) {
+                    state.lines.push({
+                        id: Date.now() + index,
+                        name: `线路${index + 1}`,
+                        color: stroke,
+                        points: points
+                    });
+                }
+            });
+            
+            // Parse stations (simplified - only circles with text nearby)
+            stationCircles.forEach((circle, index) => {
+                const cx = parseFloat(circle.getAttribute('cx'));
+                const cy = parseFloat(circle.getAttribute('cy'));
+                const fill = circle.getAttribute('fill') || '#FFFFFF';
+                
+                // Determine station type from color
+                let type = 'normal';
+                const colorToType = {
+                    '#FFD700': 'underground_transfer',
+                    '#FFA500': 'outside_transfer',
+                    '#87CEEB': 'elevated',
+                    '#90EE90': 'ground'
+                };
+                
+                for (const [color, stationType] of Object.entries(colorToType)) {
+                    if (fill.toUpperCase() === color) {
+                        type = stationType;
+                        break;
+                    }
+                }
+                
+                // Find station name from nearby text
+                let name = `站点${index + 1}`;
+                stationTexts.forEach(text => {
+                    const x = parseFloat(text.getAttribute('x'));
+                    const y = parseFloat(text.getAttribute('y'));
+                    if (Math.abs(x - cx) < 50 && y < cy) {
+                        name = text.textContent;
+                    }
+                });
+                
+                state.stations.push({
+                    id: Date.now() + index,
+                    x: cx,
+                    y: cy,
+                    name: name,
+                    type: type,
+                    lineId: state.lines[0]?.id || null
+                });
+            });
+            
+            updateLineList();
+            render();
+            saveToLocalStorage();
+        }
+
+        function parsePathData(d) {
+            const points = [];
+            const commands = d.split(/[ML]/);
+            
+            commands.forEach(cmd => {
+                const coords = cmd.trim().split(/[\s,]+/);
+                if (coords.length >= 2) {
+                    const x = parseFloat(coords[0]);
+                    const y = parseFloat(coords[1]);
+                    if (!isNaN(x) && !isNaN(y)) {
+                        points.push({ x, y });
+                    }
+                }
+            });
+            
+            return points;
+        }
+
+        function clearAll() {
+            if (confirm('确定要清空所有内容吗？此操作不可恢复！')) {
+                state.lines = [];
+                state.stations = [];
+                state.currentLine = null;
+                state.selectedLine = null;
+                state.currentLineId = null;
+                document.getElementById('selectedLineInfo').style.display = 'none';
+                updateLineList();
+                render();
+                saveToLocalStorage();
+                updateStatusBar('已清空所有内容');
+            }
+        }
+
+        // Station editing
+        function createStation(pos) {
+            // Check for overlapping stations
+            const minDistance = 30;
+            for (const station of state.stations) {
+                const dist = Math.sqrt(Math.pow(station.x - pos.x, 2) + Math.pow(station.y - pos.y, 2));
+                if (dist < minDistance) {
+                    // Edit existing station instead
+                    editStation(station);
+                    return;
+                }
+            }
+
+            // Find nearest line
+            let nearestLine = null;
+            let minDist = Infinity;
+            
+            for (const line of state.lines) {
+                for (const point of line.points) {
+                    const dist = Math.sqrt(Math.pow(point.x - pos.x, 2) + Math.pow(point.y - pos.y, 2));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearestLine = line;
+                    }
+                }
+            }
+
+            if (!nearestLine || minDist > 50) {
+                alert('站点必须靠近线路！');
+                return;
+            }
+
+            const name = document.getElementById('stationName').value || `站点${state.stations.length + 1}`;
+            const type = document.getElementById('stationType').value;
+
+            // Validate transfer station types
+            if (type === 'underground_transfer') {
+                const intersectingLines = findIntersectingLines(pos, 20);
+                if (intersectingLines.length < 2) {
+                    if (!confirm('该位置只有一条线路经过，确定要创建换乘站吗？')) {
+                        return;
+                    }
+                }
+            }
+
+            if (type === 'outside_transfer') {
+                const nearbyLines = findNearbyLines(pos, 100);
+                if (nearbyLines.length < 2) {
+                    alert('站外换乘站需要附近有多条线路！');
+                    return;
+                }
+            }
+
+            const station = {
+                id: Date.now(),
+                x: pos.x,
+                y: pos.y,
+                name: name,
+                type: type,
+                lineId: nearestLine.id
+            };
+
+            state.stations.push(station);
+            render();
+            saveToLocalStorage();
+            
+            // Clear station name input
+            document.getElementById('stationName').value = '';
+        }
+
+        function editStation(station) {
+            state.editingStation = station;
+            document.getElementById('editStationName').value = station.name;
+            document.getElementById('editStationType').value = station.type;
+            document.getElementById('stationModal').style.display = 'block';
+        }
+
+        function saveStationEdit() {
+            if (state.editingStation) {
+                state.editingStation.name = document.getElementById('editStationName').value;
+                state.editingStation.type = document.getElementById('editStationType').value;
+                render();
+                saveToLocalStorage();
+                closeModal('stationModal');
+                state.editingStation = null;
+            }
+        }
+
+        function deleteStation() {
+            if (state.editingStation) {
+                state.stations = state.stations.filter(s => s.id !== state.editingStation.id);
+                render();
+                saveToLocalStorage();
+                closeModal('stationModal');
+                state.editingStation = null;
+            }
+        }
+
+        // Status bar
+        function updateStatusBar(message) {
+            document.getElementById('statusBar').textContent = message;
+        }
+
+        // Initialize
+        loadFromLocalStorage();
+        updateStatusBar('就绪 | 模式：画线');
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        };
+    </script>
+</body>
+</html>
